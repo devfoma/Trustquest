@@ -84,7 +84,7 @@ export class LedgerService {
   }
 
   async attachTxHash(id: string, txHash: string): Promise<ActionRecord> {
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const row = await tx.actionLedger.findUnique({ where: { id } });
       if (!row) throw AppError.notFound(`action ${id} not found`);
 
@@ -174,7 +174,7 @@ export class LedgerService {
     eventPayload: unknown;
     statusHint: "confirmed" | "reverted";
   }): Promise<{ matched: boolean }> {
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const row = await tx.actionLedger.findFirst({ where: { txHash: input.txHash } });
 
       if (!row) {
