@@ -256,8 +256,8 @@ export class LedgerService {
       take: 25
     });
     const pendingTxHashes = pendingRows
-      .map((r) => r.txHash)
-      .filter((h): h is string => typeof h === "string" && h.length > 0);
+      .map((r: { txHash: string | null }) => r.txHash)
+      .filter((h: string | null): h is string => typeof h === "string" && h.length > 0);
 
     const latestRows = await this.prisma.actionLedger.findMany({
       where: { walletAddress },
