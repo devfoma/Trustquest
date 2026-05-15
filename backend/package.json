@@ -1,5 +1,5 @@
 {
-  "name": "@vaultquest/backend",
+  "name": "@trustquest/backend",
   "version": "0.1.0",
   "private": true,
   "type": "module",
