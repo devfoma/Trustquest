@@ -21,10 +21,33 @@ import Image from "next/image";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
-export default function PrizePage() {
+export default function PrizePage({ params }) {
 	const router = useRouter();
 	const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
 	const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
+	const [depositAmount, setDepositAmount] = useState("");
+	const [isPending, setIsPending] = useState(false);
+	const [error, setError] = useState(null);
+	const [success, setSuccess] = useState(false);
+
+	const handleDeposit = async () => {
+		setIsPending(true);
+		setError(null);
+		try {
+			// Mock deposit logic
+			await new Promise(resolve => setTimeout(resolve, 2000));
+			setSuccess(true);
+			setTimeout(() => {
+				setIsDepositModalOpen(false);
+				setSuccess(false);
+				setDepositAmount("");
+			}, 2000);
+		} catch (err) {
+			setError("Deposit failed. Please try again.");
+		} finally {
+			setIsPending(false);
+		}
+	};
 
 	// Sample data for the prize page
 	const prizeData = {
@@ -274,6 +297,13 @@ export default function PrizePage() {
 			<DepositModal
 				isOpen={isDepositModalOpen}
 				onClose={() => setIsDepositModalOpen(false)}
+				selectedVault={{ name: prizeData.name, id: params.id, apy: prizeData.apr, tvl: prizeData.tvl, tvlToken: "XLM" }}
+				onDeposit={handleDeposit}
+				depositAmount={depositAmount}
+				setDepositAmount={setDepositAmount}
+				isPending={isPending}
+				error={error}
+				success={success}
 			/>
 
 			<WithdrawModal

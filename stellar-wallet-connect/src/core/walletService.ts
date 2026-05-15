@@ -43,23 +43,21 @@ function disconnect(): void {
 export async function checkAndNotifyFunding(): Promise<void> {
   // Check if we are in a test environment
   if (typeof process !== "undefined" && process.env.NODE_ENV === "test") return;
-  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.MODE === "test") return;
 
   const publicKey = loadedPublicKey();
   if (!publicKey) return;
 
   try {
-    const { exists, balance } = await getWalletHealth();
+    const { exists, balances } = await getWalletHealth();
 
     const minRequired = 1;
-    const networkPass = (typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_SOROBAN_NETWORK_PASSPHRASE : "") ||
-                        (typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.PUBLIC_SOROBAN_NETWORK_PASSPHRASE : "") || "";
+    const networkPass = (typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_SOROBAN_NETWORK_PASSPHRASE : "") || "";
     const network = /Test/i.test(networkPass) ? "testnet" : "mainnet";
 
-    if (!exists || balance < minRequired) {
+    if (!exists || balances.XLM < minRequired) {
       window.dispatchEvent(
         new CustomEvent("openFundingModal", {
-          detail: { exists, balance, network },
+          detail: { exists, balance: balances.XLM, network },
         }),
       );
     }
@@ -92,13 +90,12 @@ function initializeConnection(): void {
  */
 async function getWalletHealth(): Promise<{
   exists: boolean;
-  balance: number;
+  balances: { XLM: number; USDC: number };
 }> {
   const publicKey = loadedPublicKey();
-  const horizonUrl = (typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_HORIZON_URL : "") ||
-                     (typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.PUBLIC_HORIZON_URL : "");
+  const horizonUrl = (typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_HORIZON_URL : "") || "";
 
-  if (!publicKey || !horizonUrl) return { exists: false, balance: 0 };
+  if (!publicKey || !horizonUrl) return { exists: false, balances: { XLM: 0, USDC: 0 } };
 
   try {
     const resp = await fetch(`${horizonUrl}/accounts/${publicKey}`, {
@@ -106,25 +103,37 @@ async function getWalletHealth(): Promise<{
     });
 
     if (resp.status === 404) {
-      // Account not found on this network
-      return { exists: false, balance: 0 };
+      return { exists: false, balances: { XLM: 0, USDC: 0 } };
     }
 
     if (!resp.ok) {
-      console.warn(`Unexpected Horizon response: ${resp.status}`);
-      return { exists: false, balance: 0 };
+      return { exists: false, balances: { XLM: 0, USDC: 0 } };
     }
 
     const json = await resp.json();
+    
+    // Fetch XLM (native)
     const native = (json.balances || []).find(
       (b: any) => b.asset_type === "native",
     );
-    const balance = native ? Number(native.balance) : 0;
+    const xlmBalance = native ? Number(native.balance) : 0;
 
-    return { exists: true, balance };
+    // Fetch USDC (Testnet/Mainnet check)
+    const networkPass = (typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_SOROBAN_NETWORK_PASSPHRASE : "") || "";
+    const isTestnet = /Test/i.test(networkPass);
+    const usdcIssuer = isTestnet 
+      ? "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5" // Testnet
+      : "GA5Z3V7PLRQR3S7SLSXYM6A5F6U3W3F43V7I5G47ZSX3S3G3C3G3C3G3"; // Mainnet placeholder (update if real)
+
+    const usdc = (json.balances || []).find(
+      (b: any) => b.asset_code === "USDC" && (b.issuer === usdcIssuer || !isTestnet),
+    );
+    const usdcBalance = usdc ? Number(usdc.balance) : 0;
+
+    return { exists: true, balances: { XLM: xlmBalance, USDC: usdcBalance } };
   } catch (error) {
     console.error("Error checking wallet health:", error);
-    return { exists: false, balance: 0 };
+    return { exists: false, balances: { XLM: 0, USDC: 0 } };
   }
 }
 

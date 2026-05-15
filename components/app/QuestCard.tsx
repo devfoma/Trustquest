@@ -10,9 +10,10 @@ interface QuestCardProps {
   challenge: Quest; // Keeping prop name for now to avoid breaking parent components during migration
   participation?: UserQuestParticipation;
   onJoin?: (id: string) => void;
+  isConnected?: boolean;
 }
 
-export default function QuestCard({ challenge, participation, onJoin }: QuestCardProps) {
+export default function QuestCard({ challenge, participation, onJoin, isConnected }: QuestCardProps) {
   const quest = challenge;
   const progress = participation ? calculateParticipationProgress(quest as any, participation as any) : 0;
   const isJoined = !!participation;
@@ -108,10 +109,20 @@ export default function QuestCard({ challenge, participation, onJoin }: QuestCar
           </div>
         ) : (
           <Button 
-            className="w-full bg-red-600 hover:bg-red-700 text-white font-bold h-12 rounded-xl shadow-lg shadow-red-900/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
-            onClick={() => onJoin && onJoin(quest.id)}
+            className={cn(
+              "w-full font-bold h-12 rounded-xl shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98]",
+              isConnected ? "bg-red-600 hover:bg-red-700 text-white shadow-red-900/20" : "bg-[#1A0808] border border-red-900/30 text-red-500 hover:bg-red-900/20"
+            )}
+            onClick={() => {
+              if (isConnected && onJoin) {
+                onJoin(quest.id);
+              } else {
+                // Focus the connect button or show a message
+                document.getElementById('connect-wrap')?.scrollIntoView({ behavior: 'smooth' });
+              }
+            }}
           >
-            Join Quest
+            {isConnected ? "Join Quest" : "Connect Wallet to Join"}
           </Button>
         )}
 

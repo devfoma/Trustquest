@@ -10,16 +10,25 @@ import {
   disconnect as disconnectWallet,
   loadedProvider,
   checkAndNotifyFunding,
+  getWalletHealth,
 } from "../../stellar-wallet-connect/src/core/walletService";
 import { kit } from "../../stellar-wallet-connect/src/core/kit";
 import WalletFundingWrapper from "../../stellar-wallet-connect/src/components/WalletFundingWrapper";
-import { LogOut, Wallet, ChevronDown, User } from "lucide-react";
+import { LogOut, Wallet, ChevronDown, User, Coins } from "lucide-react";
 
 export default function ConnectWallet() {
   const publicKey = useStore(connectedPublicKey);
   const [isMounted, setIsMounted] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [balances, setBalances] = useState({ XLM: 0, USDC: 0 });
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const fetchBalances = async () => {
+    const health = await getWalletHealth();
+    if (health.exists) {
+      setBalances(health.balances);
+    }
+  };
 
   useEffect(() => {
     setIsMounted(true);
@@ -29,7 +38,11 @@ export default function ConnectWallet() {
     if (provider) {
       kit.setWallet(provider);
     }
-  }, []);
+
+    if (publicKey) {
+      fetchBalances();
+    }
+  }, [publicKey]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -55,6 +68,7 @@ export default function ConnectWallet() {
             const { address } = await kit.getAddress();
             setConnection(address, option.id);
             await checkAndNotifyFunding();
+            await fetchBalances();
           } catch (err) {
             console.error("Connection failed", err);
           }
@@ -68,6 +82,7 @@ export default function ConnectWallet() {
   const handleDisconnect = () => {
     disconnectWallet();
     setShowDropdown(false);
+    setBalances({ XLM: 0, USDC: 0 });
   };
 
   if (!isMounted) return null;
@@ -96,11 +111,25 @@ export default function ConnectWallet() {
 
       {/* Dropdown Menu */}
       {showDropdown && publicKey && (
-        <div className="absolute top-full mt-2 right-0 w-48 bg-[#1A0505] border border-red-900/40 rounded-xl shadow-2xl z-[60] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="p-2 border-b border-red-900/20">
-            <div className="flex items-center gap-2 px-3 py-2 text-xs text-gray-400">
+        <div className="absolute top-full mt-2 right-0 w-56 bg-[#1A0505] border border-red-900/40 rounded-xl shadow-2xl z-[60] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="p-3 border-b border-red-900/20">
+            <div className="flex items-center gap-2 mb-2 text-xs text-gray-400">
               <User size={12} />
               <span className="truncate">{publicKey}</span>
+            </div>
+            <div className="space-y-1.5 mt-2">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-400 flex items-center gap-2">
+                  <Image src="/Stellar-Icon.png" height={14} width={14} alt="xlm" /> XLM
+                </span>
+                <span className="font-bold text-white">{balances.XLM.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-400 flex items-center gap-2">
+                  <Coins size={14} className="text-blue-400" /> USDC
+                </span>
+                <span className="font-bold text-green-400">{balances.USDC.toFixed(2)}</span>
+              </div>
             </div>
           </div>
           <button

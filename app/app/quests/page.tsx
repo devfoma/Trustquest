@@ -79,6 +79,7 @@ export default function QuestsPage() {
                   challenge={quest} 
                   participation={userParticipations.find(p => p.questId === quest.id)}
                   onJoin={join}
+                  isConnected={isConnected}
                 />
               ))}
             </div>
