@@ -1,28 +1,81 @@
 import { connectedPublicKey } from "./store";
+import { kit } from "./kit";
+import type { ISupportedWallet } from "@creit.tech/stellar-wallets-kit";
+import {
+  EXPECTED_NETWORK,
+  STELLAR_NETWORKS,
+  type NetworkType,
+  type WalletType,
+  normalizeStellarNetwork,
+} from "@/lib/wallets";
+
+export interface WalletConnectionResult {
+  address: string;
+  publicKey: string;
+  network: NetworkType;
+  provider: WalletType;
+  kitWalletId: string;
+}
+
+export interface StoredWalletConnection {
+  publicKey: string;
+  provider: WalletType;
+}
 
 const connectionState: {
   publicKey: string | undefined;
-  provider: string | undefined;
+  provider: WalletType | undefined;
 } = {
   publicKey: undefined,
   provider: undefined,
+};
+
+const walletKitIds: Record<WalletType, string> = {
+  freighter: "freighter",
+  albedo: "albedo",
+  xbull: "xbull",
+  rabet: "rabet",
+  ledger: "LEDGER",
+};
+
+const appWalletTypesByKitId: Record<string, WalletType> = {
+  freighter: "freighter",
+  albedo: "albedo",
+  xbull: "xbull",
+  rabet: "rabet",
+  LEDGER: "ledger",
+  ledger: "ledger",
 };
 
 function loadedPublicKey(): string | undefined {
   return connectionState.publicKey;
 }
 
-function loadedProvider(): string | undefined {
+function loadedProvider(): WalletType | undefined {
   return connectionState.provider;
 }
 
+function toKitWalletId(provider: string): string {
+  return walletKitIds[provider as WalletType] || provider;
+}
+
+function toAppWalletType(provider: string): WalletType | undefined {
+  return appWalletTypesByKitId[provider];
+}
+
 function setConnection(publicKey: string, provider: string): void {
+  const appProvider = toAppWalletType(provider);
+
+  if (!appProvider) {
+    throw new Error(`Unsupported Stellar wallet provider: ${provider}`);
+  }
+
   connectionState.publicKey = publicKey;
-  connectionState.provider = provider;
+  connectionState.provider = appProvider;
 
   if (typeof localStorage !== "undefined") {
     localStorage.setItem("publicKey", publicKey);
-    localStorage.setItem("walletProvider", provider);
+    localStorage.setItem("walletProvider", appProvider);
   }
 
   connectedPublicKey.set(publicKey);
@@ -41,47 +94,102 @@ function disconnect(): void {
 }
 
 export async function checkAndNotifyFunding(): Promise<void> {
-  // Check if we are in a test environment
-  if (typeof process !== "undefined" && process.env.NODE_ENV === "test") return;
+  // The product flow no longer opens the wallet funding modal automatically.
+  return;
+}
 
-  const publicKey = loadedPublicKey();
-  if (!publicKey) return;
+async function getWalletAvailability(provider: WalletType): Promise<{
+  wallet: ISupportedWallet | undefined;
+  isAvailable: boolean;
+}> {
+  if (typeof window === "undefined") {
+    return { wallet: undefined, isAvailable: false };
+  }
 
+  const kitWalletId = toKitWalletId(provider);
+  const supportedWallets = await kit.getSupportedWallets();
+  const wallet = supportedWallets.find((option) => option.id === kitWalletId);
+
+  return {
+    wallet,
+    isAvailable: Boolean(wallet?.isAvailable || wallet?.isPlatformWrapper),
+  };
+}
+
+async function connectWallet(provider: WalletType): Promise<WalletConnectionResult> {
+  if (typeof window === "undefined") {
+    throw new Error("Wallet connection is only available in the browser");
+  }
+
+  const kitWalletId = toKitWalletId(provider);
+  const { isAvailable } = await getWalletAvailability(provider);
+
+  if (!isAvailable && provider !== "albedo") {
+    throw new Error("Wallet not installed or unavailable");
+  }
+
+  kit.setWallet(kitWalletId);
+
+  const { address } = await kit.getAddress(
+    provider === "freighter" ? { skipRequestAccess: false } : undefined,
+  );
+
+  const network = await getConnectedNetwork();
+
+  setConnection(address, provider);
+
+  return {
+    address,
+    publicKey: address,
+    network,
+    provider,
+    kitWalletId,
+  };
+}
+
+async function disconnectWallet(provider?: WalletType): Promise<void> {
   try {
-    const { exists, balances } = await getWalletHealth();
-
-    const minRequired = 1;
-    const networkPass = (typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_SOROBAN_NETWORK_PASSPHRASE : "") || "";
-    const network = /Test/i.test(networkPass) ? "testnet" : "mainnet";
-
-    if (!exists || balances.XLM < minRequired) {
-      window.dispatchEvent(
-        new CustomEvent("openFundingModal", {
-          detail: { exists, balance: balances.XLM, network },
-        }),
-      );
+    if (provider && typeof window !== "undefined") {
+      kit.setWallet(toKitWalletId(provider));
+      await kit.disconnect();
     }
-  } catch (_) {
-    // Funding check is best-effort; swallow errors silently
+  } finally {
+    disconnect();
   }
 }
 
-function initializeConnection(): void {
-  if (typeof localStorage === "undefined") return;
+async function getConnectedNetwork(): Promise<NetworkType> {
+  try {
+    const networkResult = await kit.getNetwork();
+    return (
+      normalizeStellarNetwork(networkResult?.network) ||
+      normalizeStellarNetwork(networkResult?.networkPassphrase) ||
+      EXPECTED_NETWORK
+    );
+  } catch {
+    return EXPECTED_NETWORK;
+  }
+}
+
+function initializeConnection(): StoredWalletConnection | null {
+  if (typeof localStorage === "undefined") return null;
 
   const storedPublicKey = localStorage.getItem("publicKey");
   const storedProvider = localStorage.getItem("walletProvider");
+  const appProvider = storedProvider ? toAppWalletType(storedProvider) : undefined;
 
-  if (storedPublicKey && storedProvider) {
+  if (storedPublicKey && appProvider) {
     connectionState.publicKey = storedPublicKey;
-    connectionState.provider = storedProvider;
+    connectionState.provider = appProvider;
     connectedPublicKey.set(storedPublicKey);
 
-    // Check funding for returning users
-    setTimeout(() => {
-      checkAndNotifyFunding();
-    }, 500);
+    return {
+      publicKey: storedPublicKey,
+      provider: appProvider,
+    };
   }
+
+  return null;
 }
 
 /**
@@ -93,7 +201,10 @@ async function getWalletHealth(): Promise<{
   balances: { XLM: number; USDC: number };
 }> {
   const publicKey = loadedPublicKey();
-  const horizonUrl = (typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_HORIZON_URL : "") || "";
+  const horizonUrl =
+    (typeof process !== "undefined"
+      ? process.env.NEXT_PUBLIC_HORIZON_URL || process.env.PUBLIC_HORIZON_URL
+      : "") || STELLAR_NETWORKS[EXPECTED_NETWORK].horizonUrl;
 
   if (!publicKey || !horizonUrl) return { exists: false, balances: { XLM: 0, USDC: 0 } };
 
@@ -118,15 +229,11 @@ async function getWalletHealth(): Promise<{
     );
     const xlmBalance = native ? Number(native.balance) : 0;
 
-    // Fetch USDC (Testnet/Mainnet check)
-    const networkPass = (typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_SOROBAN_NETWORK_PASSPHRASE : "") || "";
-    const isTestnet = /Test/i.test(networkPass);
-    const usdcIssuer = isTestnet 
-      ? "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5" // Testnet
-      : "GA5Z3V7PLRQR3S7SLSXYM6A5F6U3W3F43V7I5G47ZSX3S3G3C3G3C3G3"; // Mainnet placeholder (update if real)
+    // Fetch USDC (Testnet only)
+    const usdcIssuer = "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"; // Testnet
 
     const usdc = (json.balances || []).find(
-      (b: any) => b.asset_code === "USDC" && (b.issuer === usdcIssuer || !isTestnet),
+      (b: any) => b.asset_code === "USDC" && b.issuer === usdcIssuer,
     );
     const usdcBalance = usdc ? Number(usdc.balance) : 0;
 
@@ -140,6 +247,12 @@ async function getWalletHealth(): Promise<{
 export {
   loadedPublicKey,
   loadedProvider,
+  toKitWalletId,
+  toAppWalletType,
+  getWalletAvailability,
+  connectWallet,
+  disconnectWallet,
+  getConnectedNetwork,
   setConnection,
   disconnect,
   initializeConnection,

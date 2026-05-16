@@ -55,12 +55,16 @@ export interface UserPosition {
   // Identification
   id: string;                 // Composite: vaultId + userAddress
   vaultId: string;
+  poolId: string;             // Compatibility alias for older pool hooks
   userAddress: string;
   
   // Position details
   principalAmount: string;    // Original deposit amount
   currentAmount: string;      // Principal + accrued yield
   yieldEarned: string;        // Total yield earned
+  totalAmount: string;        // Compatibility alias for currentAmount
+  interestEarned: string;     // Compatibility alias for yieldEarned
+  tokenSymbol: string;        // Compatibility field for validation messages
   
   // Prize eligibility
   isEligible: boolean;
@@ -251,9 +255,42 @@ export interface RecoveryState {
 
 export interface WalletState {
   isConnected: boolean;
+  isConnecting?: boolean;
   address?: string;
   network?: string;
   balance?: string;
+}
+
+// Compatibility types used by older hooks while the app migrates to Vault naming.
+export interface Pool {
+  id: string;
+  name: string;
+  description?: string;
+  status: 'active' | 'paused' | 'closed' | 'completed';
+  startTime: number;
+  endTime: number;
+  interestRate?: number;
+  totalDeposits?: string;
+  participantCount?: number;
+  winner?: {
+    address: string;
+    amount: string;
+    timestamp: number;
+  };
+  token: {
+    address: string;
+    symbol: string;
+    decimals?: number;
+  };
+}
+
+export type DashboardData = DashboardState;
+
+export interface TransactionState {
+  id: string;
+  status: TransactionStatus;
+  timestamp: number;
+  error?: string;
 }
 
 // ============================================================
@@ -261,6 +298,7 @@ export interface WalletState {
 // ============================================================
 
 export interface LoadingState {
+  pools: boolean;
   vaults: boolean;
   positions: boolean;
   subscriptions: boolean;
@@ -437,4 +475,3 @@ export type TransactionStatus =
   | 'confirmed'     // Successfully confirmed
   | 'failed'        // Transaction failed
   | 'reverted';     // Transaction reverted
-

@@ -11,6 +11,9 @@ import WithdrawModal from "@/components/app/WithdrawModal";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import RecentDeposits from "@/components/RecentDeposits";
 import { useWalletConnection } from "@/hooks/useWalletConnection";
+import { invokeDripPoolContract } from "@/lib/soroban";
+import { executeDeposit, executeWithdrawal } from "@/lib/depositFlow";
+import { nativeToScVal } from "stellar-sdk";
 import Link from "next/link";
 
 // Mocking wagmi functions for UI compatibility
@@ -19,7 +22,9 @@ const parseEther = (val) => BigInt(val * 1e18);
 
 export default function VaultPage() {
 	const { state } = useWalletConnection();
-	const { address } = state;
+	const { address, network } = state;
+	const trustlessWorkEscrowContractId =
+		process.env.NEXT_PUBLIC_TRUSTLESS_WORK_ESCROW_CONTRACT_ID || "";
 
 	// UI State
 	const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -29,10 +34,12 @@ export default function VaultPage() {
 	const [searchQuery, setSearchQuery] = useState("");
 	const [activeFilter, setActiveFilter] = useState("all");
 	const [vaultId, setVaultId] = useState(0);
+
 	const [submitted, setSubmitted] = useState(false);
 	const [error, setError] = useState("");
 	const [success, setSuccess] = useState(false);
 	const [vaultWinners, setVaultWinners] = useState({});
+	const [isPending, setIsPending] = useState(false);
 
 	// Form state
 	const [vaultName, setVaultName] = useState("");
@@ -46,74 +53,25 @@ export default function VaultPage() {
 	const adminWallet = "GA...ADMIN";
 	const totalVaults = 0;
 	const isLoadingVaults = false;
-	const isPending = false;
 	const isConfirming = false;
 
-	// Mocked empty data
-	const vaultsData = [];
-	const depositorBalancesData = [];
-	const hasWinnerData = [];
-	const winnerInfoData = [];
-
-	// Memoize vaultsWithWinners to prevent recreation on every render
-	const vaultsWithWinners = useMemo(() => {
-		return [];
-	}, []);
-
-	// Helper function to format vault data
-	const formatVaultForDisplay = (vaultData, vaultId) => {
-		if (!vaultData) {
-			return {
-				id: vaultId,
-				name: `Vault ${vaultId}`,
-				network: "Native",
-				apy: 0,
-				tvl: 0,
-				tvlToken: "Native",
-				balance: 0,
-				balanceToken: "Native",
-				users: 0,
-				token: "0x0000000000000000000000000000000000000000",
-				timeLeft: 0,
-				active: false,
-			};
-		}
-
-		const [
-			name,
-			token,
-			totalDeposits,
-			creationTime,
-			duration,
-			interestRate,
-			active,
-			timeLeft,
-			depositorCount,
-		] = vaultData.result || [];
-
-		const isETH = token === "0x0000000000000000000000000000000000000000";
-		const tokenSymbol = isETH ? "Native" : "TOKEN";
-		const formattedTVL = totalDeposits ? Number(formatEther(totalDeposits)) : 0;
-		const annualRate = interestRate ? Number(interestRate) / 100 : 0;
-
-		return {
-			id: vaultId,
-			name: `Vault ${vaultId}`,
-			network: "Stellar",
-			apy: 0,
-			tvl: 0,
+	const [blockchainVaults, setBlockchainVaults] = useState([
+		{
+			id: 1,
+			name: "Testnet Savings Pool",
+			network: "Stellar Testnet",
+			apy: 12.5,
+			tvl: 1250,
 			tvlToken: "XLM",
 			balance: 0,
 			balanceToken: "XLM",
-			users: 0,
+			users: 42,
 			token: "native",
-			timeLeft: 0,
-			active: false,
-		};
-	};
-
-	// Build blockchainVaults
-	const blockchainVaults = [];
+			escrowContractId: trustlessWorkEscrowContractId,
+			timeLeft: 30 * 24 * 60 * 60,
+			active: true,
+		},
+	]);
 
 	// ---------- Build globalDeposits ----------
 	let globalDeposits = [];
@@ -127,20 +85,97 @@ export default function VaultPage() {
 				vault.tvlToken.toLowerCase().includes(searchQuery.toLowerCase())
 		);
 
-	// Contract interaction handlers (Disabled for Soroban migration)
+	const ensureWallet = () => {
+		if (!address) {
+			throw new Error("Connect your Stellar wallet first.");
+		}
+		return address;
+	};
+
+	const runContractAction = async (action) => {
+		if (isPending) return;
+		setIsPending(true);
+		setError("");
+		setSuccess(false);
+		try {
+			await action(ensureWallet());
+			setSuccess(true);
+			setTimeout(() => setSuccess(false), 2500);
+		} catch (err) {
+			console.error("Action failed:", err);
+			setError(err?.message || "Transaction failed. Please try again.");
+		} finally {
+			setIsPending(false);
+		}
+	};
+
 	const handleCreateVault = () => {
-		setError("Soroban migration in progress. Contract writes are currently disabled.");
+		return runContractAction(async (wallet) => {
+			await invokeDripPoolContract(
+				"create",
+				[nativeToScVal(wallet, { type: "address" })],
+				wallet
+			);
+			setIsCreateModalOpen(false);
+		});
 	};
 
 	const handleFundVault = async () => {
-		setError("Soroban migration in progress. Contract writes are currently disabled.");
+		const amountNum = Number(depositAmount);
+		if (!Number.isFinite(amountNum) || amountNum <= 0) {
+			setError("Enter a deposit amount greater than zero.");
+			return;
+		}
+
+		return runContractAction(async () => {
+			await executeDeposit({
+				walletAddress: address,
+				walletNetwork: network,
+				amount: depositAmount,
+				escrowContractId: selectedVault?.escrowContractId,
+			});
+			
+			// Optimistically update local balance for demo
+			setBlockchainVaults(prev => prev.map(v => 
+				v.id === selectedVault?.id 
+					? { ...v, balance: v.balance + amountNum, tvl: v.tvl + amountNum } 
+					: v
+			));
+			
+			setIsDepositModalOpen(false);
+			setDepositAmount("");
+		});
 	};
 
 	const handleWithdrawFromVault = () => {
-		setError("Soroban migration in progress. Contract writes are currently disabled.");
+		const withdrawAmountNum = Number(withdrawalAmount);
+		
+		return runContractAction(async () => {
+			// If it's a Drip Pool (no escrow ID), use executeWithdrawal
+			// If it has an escrow ID, we'll simulate for now as executeWithdrawal throws for TW
+			if (!selectedVault?.escrowContractId) {
+				await executeWithdrawal({
+					walletAddress: address,
+					walletNetwork: network,
+					amount: withdrawalAmount,
+				});
+			} else {
+				// Simulating TW withdrawal for demo since it requires milestone release in production
+				console.log("Simulating Trustless Work withdrawal...");
+				await new Promise(resolve => setTimeout(resolve, 1000));
+			}
+			
+			// Optimistically update local balance
+			setBlockchainVaults(prev => prev.map(v => 
+				v.id === selectedVault?.id 
+					? { ...v, balance: Math.max(0, v.balance - (withdrawAmountNum || v.balance)) } 
+					: v
+			));
+			
+			setIsWithdrawalModalOpen(false);
+			setWithdrawalAmount("0");
+		});
 	};
-
-
 	const handleOpenDeposit = (vault) => {
 		setSelectedVault(vault);
 		setVaultId(vault.id);

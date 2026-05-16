@@ -1,16 +1,50 @@
 import {
-  allowAllModules,
   StellarWalletsKit,
+  FreighterModule,
+  AlbedoModule,
+  xBullModule,
+  HanaModule,
+  RabetModule,
+  LobstrModule,
+  WalletNetwork,
 } from "@creit.tech/stellar-wallets-kit";
 import { LedgerModule } from "@creit.tech/stellar-wallets-kit/modules/ledger.module";
 
-// Use a getter or a function to allow dynamic network passphrase if needed
+const resolveWalletNetwork = (networkPassphrase?: string): WalletNetwork => {
+  const configuredNetwork =
+    networkPassphrase ||
+    (typeof process !== "undefined"
+      ? process.env.NEXT_PUBLIC_SOROBAN_NETWORK_PASSPHRASE ||
+        process.env.PUBLIC_SOROBAN_NETWORK_PASSPHRASE
+      : undefined);
+
+  switch (configuredNetwork) {
+    case WalletNetwork.PUBLIC:
+      return WalletNetwork.PUBLIC;
+    case WalletNetwork.FUTURENET:
+      return WalletNetwork.FUTURENET;
+    case WalletNetwork.SANDBOX:
+      return WalletNetwork.SANDBOX;
+    case WalletNetwork.STANDALONE:
+      return WalletNetwork.STANDALONE;
+    case WalletNetwork.TESTNET:
+    default:
+      return WalletNetwork.TESTNET;
+  }
+};
+
 export const createKit = (networkPassphrase?: string) => {
   return new StellarWalletsKit({
-    modules: [...allowAllModules(), new LedgerModule()],
-    network: networkPassphrase || 
-             (typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_SOROBAN_NETWORK_PASSPHRASE : "") ||
-             (typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.PUBLIC_SOROBAN_NETWORK_PASSPHRASE : ""),
+    modules: [
+      new FreighterModule(),
+      new AlbedoModule(),
+      new xBullModule(),
+      new HanaModule(),
+      new RabetModule(),
+      new LobstrModule(),
+      new LedgerModule()
+    ],
+    network: resolveWalletNetwork(networkPassphrase),
   });
 };
 
@@ -29,4 +63,3 @@ export const kit = new Proxy({} as StellarWalletsKit, {
     return typeof value === 'function' ? value.bind(_kit) : value;
   },
 });
-

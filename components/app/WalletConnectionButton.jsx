@@ -23,7 +23,7 @@ export default function WalletConnectionButton({
   showAddress = true,
   showNetwork = false,
   className = "",
-  onConnectSuccess,
+  onConnectSuccess = undefined,
 }) {
   const { 
     state, 
@@ -33,6 +33,7 @@ export default function WalletConnectionButton({
     formattedAddress,
     isReconnecting,
     canRetry,
+    isWrongNetwork,
     disconnect,
     refreshConnection,
     clearError
@@ -71,7 +72,7 @@ export default function WalletConnectionButton({
           onClick={handleConnect}
           className={`bg-red-600 hover:bg-red-700 ${className}`}
         >
-          <Wallet className="w-4 h-4 mr-2" />
+          <Wallet className="w-4 h-4 mr-2 opacity-80" />
           {WALLET_COPY.CONNECT_WALLET}
         </Button>
         
@@ -165,9 +166,14 @@ export default function WalletConnectionButton({
           variant={variant}
           size={size}
           onClick={() => setShowDropdown(!showDropdown)}
-          className={`bg-green-600 hover:bg-green-700 ${className}`}
+          className={`${isWrongNetwork ? "bg-amber-600 hover:bg-amber-700" : "bg-green-600 hover:bg-green-700"} ${className}`}
         >
-          <CheckCircle className="w-4 h-4 mr-2" />
+          {isWrongNetwork ? (
+            <AlertTriangle className="w-4 h-4 mr-2" />
+          ) : (
+            <CheckCircle className="w-4 h-4 mr-2" />
+          )}
+          {isWrongNetwork && <span className="mr-2">{WALLET_COPY.WRONG_NETWORK}</span>}
           {showAddress && formattedAddress && (
             <span className="mr-2">{formattedAddress}</span>
           )}
@@ -182,8 +188,13 @@ export default function WalletConnectionButton({
         </Button>
         
         {showDropdown && (
-          <div className="absolute top-full mt-2 right-0 bg-[#1A0808]/95 backdrop-blur-sm border border-green-500/30 rounded-lg shadow-lg z-50 min-w-[250px]">
+          <div className={`absolute top-full mt-2 right-0 bg-[#1A0808]/95 backdrop-blur-sm border rounded-lg shadow-lg z-50 min-w-[250px] ${isWrongNetwork ? "border-amber-500/30" : "border-green-500/30"}`}>
             <div className="p-3">
+              {isWrongNetwork && (
+                <div className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                  Switch your wallet network to Stellar Testnet before depositing.
+                </div>
+              )}
               {/* Wallet Info */}
               <div className="mb-3 pb-3 border-b border-gray-700">
                 <div className="flex items-center gap-2 mb-2">

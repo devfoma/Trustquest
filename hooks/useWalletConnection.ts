@@ -6,122 +6,61 @@ import {
   NetworkType, 
   WalletConnectionState, 
   WalletSession, 
-  WalletError,
   WalletConnectionStatus,
   SESSION_CONFIG,
+  EXPECTED_NETWORK,
   getWalletConfig,
   getNetworkConfig,
   isWalletSupported,
   isNetworkSupported,
+  isExpectedNetwork,
   validateStellarAddress,
   getWalletError,
   formatWalletAddress,
   WALLET_ERRORS
 } from '@/lib/wallets';
 
-import { isConnected, getAddress, getNetwork as getFreighterNetwork } from "@stellar/freighter-api";
-import albedo from "@albedo-link/intent";
+import {
+  connectWallet,
+  disconnectWallet,
+  disconnect as clearStoredConnection,
+  initializeConnection,
+  setConnection as setStoredConnection,
+} from "@/stellar-wallet-connect/src/core/walletService";
 
-// Wallet Provider interface
-interface WalletProvider {
-  isConnected(): Promise<boolean>;
-  connect(): Promise<{ address: string; publicKey: string; network: NetworkType }>;
-  disconnect(): Promise<void>;
-  getNetwork(): Promise<NetworkType>;
-}
+const WALLET_SESSION_EVENT = 'trustquest:wallet-session';
 
-// Real wallet implementations
-const walletProviders: Record<WalletType, WalletProvider> = {
-  freighter: {
-    isConnected: async () => {
-      const res = await isConnected();
-      return typeof res === 'boolean' ? res : !!res?.isConnected;
-    },
-    connect: async () => {
-      const addressRes = await getAddress();
-      const address = typeof addressRes === 'string' ? addressRes : addressRes.address;
-      
-      const networkRes = await getFreighterNetwork();
-      const networkStr = typeof networkRes === 'string' ? networkRes : networkRes?.network;
-      
-      return {
-        address,
-        publicKey: address,
-        network: (networkStr?.toLowerCase() as NetworkType) || 'mainnet'
-      };
-    },
-    disconnect: async () => {
-      // Freighter doesn't have a programmatic disconnect
-    },
-    getNetwork: async () => {
-      const networkRes = await getFreighterNetwork();
-      const networkStr = typeof networkRes === 'string' ? networkRes : networkRes?.network;
-      return (networkStr?.toLowerCase() as NetworkType) || 'mainnet';
-    },
-  },
-  albedo: {
-    isConnected: async () => true, // Albedo is web-based, always "available"
-    connect: async () => {
-      const res = await albedo.publicKey({
-        token: 'trustquest-auth' // Optional token for Albedo
-      });
-      return {
-        address: res.pubkey,
-        publicKey: res.pubkey,
-        network: 'mainnet' // Albedo usually defaults to mainnet or user selection
-      };
-    },
-    disconnect: async () => {},
-    getNetwork: async () => 'mainnet',
-  },
-  xbull: {
-    isConnected: async () => !!(window as any).xBullWallet,
-    connect: async () => {
-      const res = await (window as any).xBullWallet.getPublicKey();
-      return {
-        address: res,
-        publicKey: res,
-        network: 'mainnet'
-      };
-    },
-    disconnect: async () => {},
-    getNetwork: async () => 'mainnet',
-  },
-  rabet: {
-    isConnected: async () => !!(window as any).rabet,
-    connect: async () => {
-      const res = await (window as any).rabet.connect();
-      return {
-        address: res.publicKey,
-        publicKey: res.publicKey,
-        network: 'mainnet'
-      };
-    },
-    disconnect: async () => {},
-    getNetwork: async () => 'mainnet',
-  },
-  ledger: {
-    isConnected: async () => true,
-    connect: async () => {
-      // Ledger implementation is more complex, keeping it as a stub for now
-      throw new Error("Ledger support coming soon");
-    },
-    disconnect: async () => {},
-    getNetwork: async () => 'mainnet',
-  }
+const disconnectedState: WalletConnectionState = {
+  isConnected: false,
+  isConnecting: false,
+  walletType: null,
+  address: null,
+  network: null,
+  publicKey: null,
+  error: null,
+  lastConnected: null,
 };
 
+const emitWalletSessionChange = (session: WalletSession | null) => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(WALLET_SESSION_EVENT, { detail: session }));
+};
+
+const sessionToState = (session: WalletSession): WalletConnectionState => ({
+  isConnected: true,
+  isConnecting: false,
+  walletType: session.walletType,
+  address: session.address,
+  network: session.network,
+  publicKey: session.publicKey,
+  error: isExpectedNetwork(session.network)
+    ? null
+    : `TrustQuest runs on Stellar Testnet. Switch your wallet from ${getNetworkConfig(session.network).displayName} to ${getNetworkConfig(EXPECTED_NETWORK).displayName}.`,
+  lastConnected: session.connectedAt,
+});
+
 export function useWalletConnection() {
-  const [state, setState] = useState<WalletConnectionState>({
-    isConnected: false,
-    isConnecting: false,
-    walletType: null,
-    address: null,
-    network: null,
-    publicKey: null,
-    error: null,
-    lastConnected: null,
-  });
+  const [state, setState] = useState<WalletConnectionState>(disconnectedState);
 
   const [status, setStatus] = useState<WalletConnectionStatus>(WalletConnectionStatus.DISCONNECTED);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
@@ -130,6 +69,23 @@ export function useWalletConnection() {
   // Load saved session on mount
   useEffect(() => {
     loadSavedSession();
+  }, []);
+
+  useEffect(() => {
+    const handleSessionChange = (event: Event) => {
+      const session = (event as CustomEvent<WalletSession | null>).detail;
+      if (!session) {
+        setState(disconnectedState);
+        setStatus(WalletConnectionStatus.DISCONNECTED);
+        return;
+      }
+
+      setState(sessionToState(session));
+      setStatus(WalletConnectionStatus.CONNECTED);
+    };
+
+    window.addEventListener(WALLET_SESSION_EVENT, handleSessionChange);
+    return () => window.removeEventListener(WALLET_SESSION_EVENT, handleSessionChange);
   }, []);
 
   // Auto-reconnect logic
@@ -152,8 +108,6 @@ export function useWalletConnection() {
         connectedAt: Date.now(),
         expiresAt: Date.now() + SESSION_CONFIG.SESSION_DURATION,
       });
-    } else if (!state.isConnected) {
-      clearSession();
     }
   }, [state]);
 
@@ -165,18 +119,30 @@ export function useWalletConnection() {
         
         // Check if session is still valid
         if (Date.now() < session.expiresAt) {
-          setState(prev => ({
-            ...prev,
-            walletType: session.walletType,
-            address: session.address,
-            publicKey: session.publicKey,
-            network: session.network,
-            lastConnected: session.connectedAt,
-          }));
-          setStatus(WalletConnectionStatus.RECONNECTING);
+          setStoredConnection(session.address, session.walletType);
+          setState(sessionToState(session));
+          setStatus(WalletConnectionStatus.CONNECTED);
         } else {
           clearSession();
+          clearStoredConnection();
         }
+        return;
+      }
+
+      const storedConnection = initializeConnection();
+      if (storedConnection && validateStellarAddress(storedConnection.publicKey)) {
+        const session: WalletSession = {
+          walletType: storedConnection.provider,
+          address: storedConnection.publicKey,
+          publicKey: storedConnection.publicKey,
+          network: EXPECTED_NETWORK,
+          connectedAt: Date.now(),
+          expiresAt: Date.now() + SESSION_CONFIG.SESSION_DURATION,
+        };
+
+        saveSession(session);
+        setState(sessionToState(session));
+        setStatus(WalletConnectionStatus.CONNECTED);
       }
     } catch (error) {
       console.error('Failed to load saved session:', error);
@@ -216,17 +182,7 @@ export function useWalletConnection() {
     setStatus(WalletConnectionStatus.CONNECTING);
 
     try {
-      const provider = walletProviders[walletType];
-      
-      // Check if wallet is available (in real implementation, this would check if the wallet is installed)
-      const isAvailable = await provider.isConnected();
-      
-      if (!isAvailable && walletType !== 'albedo') {
-        throw new Error('Wallet not installed or unavailable');
-      }
-
-      // Connect to wallet
-      const connection = await provider.connect();
+      const connection = await connectWallet(walletType);
       
       // Validate address
       if (!validateStellarAddress(connection.address)) {
@@ -252,22 +208,24 @@ export function useWalletConnection() {
         return false;
       }
 
-      // Success
-      setState(prev => ({
-        ...prev,
-        isConnected: true,
-        isConnecting: false,
+      const session: WalletSession = {
         walletType,
         address: connection.address,
         publicKey: connection.publicKey,
         network: connection.network,
-        error: null,
-        lastConnected: Date.now(),
-      }));
+        connectedAt: Date.now(),
+        expiresAt: Date.now() + SESSION_CONFIG.SESSION_DURATION,
+      };
+      const nextState = sessionToState(session);
+
+      setStoredConnection(connection.address, walletType);
+      saveSession(session);
+      emitWalletSessionChange(session);
+      setState(nextState);
       setStatus(WalletConnectionStatus.CONNECTED);
       setReconnectAttempts(0);
 
-      return true;
+      return isExpectedNetwork(connection.network);
 
     } catch (error) {
       console.error('Wallet connection failed:', error);
@@ -298,23 +256,14 @@ export function useWalletConnection() {
 
   const disconnect = useCallback(async (): Promise<void> => {
     try {
-      if (state.walletType && walletProviders[state.walletType]) {
-        await walletProviders[state.walletType].disconnect();
-      }
+      await disconnectWallet(state.walletType ?? undefined);
     } catch (error) {
       console.error('Wallet disconnect failed:', error);
     }
 
-    setState({
-      isConnected: false,
-      isConnecting: false,
-      walletType: null,
-      address: null,
-      network: null,
-      publicKey: null,
-      error: null,
-      lastConnected: null,
-    });
+    clearSession();
+    emitWalletSessionChange(null);
+    setState(disconnectedState);
     setStatus(WalletConnectionStatus.DISCONNECTED);
     setReconnectAttempts(0);
     
@@ -336,7 +285,6 @@ export function useWalletConnection() {
     }
 
     try {
-      const provider = walletProviders[state.walletType];
       // Note: Stellar wallets often handle network switching within their own UI
       // but we update our state to reflect the intent
       
@@ -391,6 +339,7 @@ export function useWalletConnection() {
   const formattedAddress = state.address ? formatWalletAddress(state.address) : '';
   const isReconnecting = status === WalletConnectionStatus.RECONNECTING;
   const canRetry = status === WalletConnectionStatus.ERROR && reconnectAttempts < SESSION_CONFIG.RECONNECT_ATTEMPTS;
+  const isWrongNetwork = state.isConnected && !isExpectedNetwork(state.network);
 
   return {
     // State
@@ -404,6 +353,7 @@ export function useWalletConnection() {
     formattedAddress,
     isReconnecting,
     canRetry,
+    isWrongNetwork,
     
     // Actions
     connect,

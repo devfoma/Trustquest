@@ -1,5 +1,13 @@
 import { useState } from "react";
 
+declare global {
+  interface Window {
+    wallet?: { sign: (tx: unknown) => Promise<unknown> };
+    submitTx?: (signedTx: unknown) => Promise<string>;
+    waitForConfirmation?: (hash: string) => Promise<void>;
+  }
+}
+
 export type TxState =
   | "idle"
   | "preparing"
@@ -25,6 +33,9 @@ export function useTransaction(): UseTransactionResult {
       const tx = await txBuilder();
       setState("signing");
       // Replace with your wallet integration
+      if (!window.wallet?.sign || !window.submitTx || !window.waitForConfirmation) {
+        throw new Error("Wallet transaction helpers are not available");
+      }
       const signed = await window.wallet.sign(tx);
       setState("submitting");
       // Replace with your tx submission logic

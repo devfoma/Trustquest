@@ -13,7 +13,7 @@ import QuestCard from "@/components/app/QuestCard"
 export default function QuestsPage() {
   const { state: walletState } = useWalletConnection()
   const { address, isConnected } = walletState
-  const { challenges: quests, userParticipations, loading, join, refresh } = useQuests(address)
+  const { challenges: quests, userParticipations, loading, error, join } = useQuests(address)
   const [searchQuery, setSearchQuery] = useState("")
 
   const filteredQuests = quests.filter(q => 
@@ -48,6 +48,13 @@ export default function QuestsPage() {
               </Link>
             )}
           </div>
+
+          {/* Search & Filter */}
+          {error && (
+            <div className="mb-6 rounded-2xl border border-red-500/20 bg-red-900/20 p-4 text-sm text-red-100">
+              {error}
+            </div>
+          )}
 
           {/* Search & Filter */}
           <div className="bg-[#1A0808]/50 backdrop-blur-md rounded-2xl border border-red-900/10 p-4 mb-8 flex flex-col md:flex-row gap-4">

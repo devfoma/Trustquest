@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import AppNav from "@/components/app/AppNav";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ExternalLink, Clock, Users, Trophy, Wallet } from "lucide-react";
+import { invokeDripPoolContract } from "@/lib/soroban";
+import { nativeToScVal } from "stellar-sdk";
+import { executeDeposit } from "@/lib/depositFlow";
+import { useWalletConnection } from "@/hooks/useWalletConnection";
 import DepositModal from "@/components/app/DepositModal";
 import WithdrawModal from "@/components/app/WithdrawModal";
 import { Bar } from "react-chartjs-2";
@@ -23,19 +27,35 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 
 export default function PrizePage({ params }) {
 	const router = useRouter();
+	const { state: walletState } = useWalletConnection();
 	const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
 	const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
 	const [depositAmount, setDepositAmount] = useState("");
+	const [withdrawalAmount, setWithdrawalAmount] = useState("0");
 	const [isPending, setIsPending] = useState(false);
 	const [error, setError] = useState(null);
 	const [success, setSuccess] = useState(false);
+	const trustlessWorkEscrowContractId =
+		process.env.NEXT_PUBLIC_TRUSTLESS_WORK_ESCROW_CONTRACT_ID || "";
 
 	const handleDeposit = async () => {
 		setIsPending(true);
 		setError(null);
 		try {
-			// Mock deposit logic
-			await new Promise(resolve => setTimeout(resolve, 2000));
+			if (!walletState.isConnected || !walletState.address) {
+				throw new Error("Wallet not connected");
+			}
+			if (!depositAmount || isNaN(Number(depositAmount))) {
+				throw new Error("Invalid deposit amount");
+			}
+
+			await executeDeposit({
+				walletAddress: walletState.address,
+				walletNetwork: walletState.network,
+				amount: depositAmount,
+				escrowContractId: trustlessWorkEscrowContractId,
+			});
+
 			setSuccess(true);
 			setTimeout(() => {
 				setIsDepositModalOpen(false);
@@ -43,7 +63,60 @@ export default function PrizePage({ params }) {
 				setDepositAmount("");
 			}, 2000);
 		} catch (err) {
-			setError("Deposit failed. Please try again.");
+			console.error("Deposit error:", err);
+			setError(err.message || "Deposit failed. Please try again.");
+		} finally {
+			setIsPending(false);
+		}
+	};
+
+	const handleWithdraw = async () => {
+		setIsPending(true);
+		setError(null);
+		try {
+			if (!walletState.isConnected || !walletState.address) {
+				throw new Error("Wallet not connected");
+			}
+
+			await invokeDripPoolContract(
+				"withdraw",
+				[nativeToScVal(walletState.address, { type: "address" })],
+				walletState.address
+			);
+
+			setSuccess(true);
+			setTimeout(() => {
+				setIsWithdrawModalOpen(false);
+				setSuccess(false);
+				setWithdrawalAmount("0");
+			}, 2000);
+		} catch (err) {
+			console.error("Withdraw error:", err);
+			setError(err.message || "Withdrawal failed. Please try again.");
+		} finally {
+			setIsPending(false);
+		}
+	};
+
+	const handleClaimRewards = async () => {
+		setIsPending(true);
+		setError(null);
+		try {
+			if (!walletState.isConnected || !walletState.address) {
+				throw new Error("Wallet not connected");
+			}
+
+			await invokeDripPoolContract(
+				"claim_reward",
+				[nativeToScVal(walletState.address, { type: "address" })],
+				walletState.address
+			);
+
+			setSuccess(true);
+			setTimeout(() => setSuccess(false), 2000);
+		} catch (err) {
+			console.error("Claim reward error:", err);
+			setError(err.message || "Reward claim failed. Please try again.");
 		} finally {
 			setIsPending(false);
 		}
@@ -141,6 +214,14 @@ export default function PrizePage({ params }) {
 							onClick={() => setIsWithdrawModalOpen(true)}
 						>
 							Withdraw
+						</Button>
+						<Button
+							variant="outline"
+							className="border-red-900/20 hover:bg-red-600/10 backdrop-blur-sm shadow-lg"
+							onClick={handleClaimRewards}
+							disabled={isPending}
+						>
+							Claim Rewards
 						</Button>
 					</div>
 				</div>
@@ -309,6 +390,13 @@ export default function PrizePage({ params }) {
 			<WithdrawModal
 				isOpen={isWithdrawModalOpen}
 				onClose={() => setIsWithdrawModalOpen(false)}
+				selectedVault={{ name: prizeData.name, id: params.id, balance: Number(withdrawalAmount) || 0, balanceToken: "XLM" }}
+				onWithdraw={handleWithdraw}
+				withdrawalAmount={withdrawalAmount}
+				setWithdrawalAmount={setWithdrawalAmount}
+				isPending={isPending}
+				error={error}
+				success={success}
 			/>
 		</div>
 	);

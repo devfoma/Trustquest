@@ -14,9 +14,9 @@ import { useChallenges as useQuests } from "@/hooks/useQuests"
 
 export default function CreateQuestPage() {
   const router = useRouter()
-  const { state: walletState } = useWalletConnection()
+  const { state: walletState, isWrongNetwork } = useWalletConnection()
   const { address } = walletState
-  const { createNewQuest } = useQuests(address)
+  const { createNewQuest, error } = useQuests(address)
   
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
@@ -34,24 +34,35 @@ export default function CreateQuestPage() {
     setLoading(true)
     
     try {
+      const savingsGoal = parseFloat(formData.savingsGoal)
+      const rewardAmount = parseFloat(formData.rewardAmount)
+      if (!Number.isFinite(savingsGoal) || savingsGoal <= 0) {
+        throw new Error("Enter a savings goal greater than zero.")
+      }
+      if (!Number.isFinite(rewardAmount) || rewardAmount <= 0) {
+        throw new Error("Enter a reward amount greater than zero.")
+      }
+
       // Logic for creating quest via questService (wrapped by useQuests)
       // For demo, we'll create simple milestones based on the duration
       const milestones = [
-        parseFloat(formData.savingsGoal) * 0.25,
-        parseFloat(formData.savingsGoal) * 0.5,
-        parseFloat(formData.savingsGoal) * 0.75,
-        parseFloat(formData.savingsGoal)
+        savingsGoal * 0.25,
+        savingsGoal * 0.5,
+        savingsGoal * 0.75,
+        savingsGoal
       ]
 
-      await createNewQuest(
+      const created = await createNewQuest(
         formData.title,
         formData.description,
-        parseFloat(formData.rewardAmount),
+        rewardAmount,
         formData.rewardToken,
         milestones
       )
-      
-      router.push("/app/quests")
+
+      if (created) {
+        router.push("/app/quests")
+      }
     } catch (error) {
       console.error("Failed to create quest:", error)
     } finally {
@@ -170,9 +181,27 @@ export default function CreateQuestPage() {
                   </p>
                 </div>
 
+                {!address && (
+                  <div className="bg-red-900/20 border border-red-500/20 rounded-2xl p-4 mb-6 text-sm text-red-100">
+                    Connect your Stellar wallet before creating a quest.
+                  </div>
+                )}
+
+                {isWrongNetwork && (
+                  <div className="bg-amber-900/20 border border-amber-500/30 rounded-2xl p-4 mb-6 text-sm text-amber-100">
+                    Switch your wallet to Stellar Testnet before creating a quest.
+                  </div>
+                )}
+
+                {error && (
+                  <div className="bg-red-900/20 border border-red-500/20 rounded-2xl p-4 mb-6 text-sm text-red-100">
+                    {error}
+                  </div>
+                )}
+
                 <Button 
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || !address || isWrongNetwork}
                   className="w-full bg-red-600 hover:bg-red-700 text-white font-bold h-14 rounded-2xl shadow-lg shadow-red-900/20 transition-all text-lg"
                 >
                   {loading ? (

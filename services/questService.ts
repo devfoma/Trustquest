@@ -6,7 +6,6 @@
  */
 
 import { Quest, QuestStatus, UserQuestParticipation } from '@/types/quest';
-import { EscrowService } from '@/services/escrowService';
 import * as SavingsLib from '@/lib/savings/lifecycle';
 
 // Mock DB for demonstration
@@ -57,7 +56,8 @@ export async function createChallenge(
   sponsorAddress: string, 
   rewardAmount: number,
   rewardToken: string,
-  milestoneTargets: number[]
+  milestoneTargets: number[],
+  escrowId?: string
 ): Promise<Quest> {
   
   // 1. Initialize Quest Object
@@ -68,8 +68,9 @@ export async function createChallenge(
     sponsorAddress,
     rewardAmount,
     rewardToken,
-    status: 'DRAFT',
-    escrowStatus: 'PENDING',
+    status: escrowId ? 'ACTIVE' : 'DRAFT',
+    escrowId,
+    escrowStatus: escrowId ? 'FUNDED' : 'PENDING',
     milestones: milestoneTargets.map((target, index) => ({
       id: `ms_${index}`,
       description: `Save ${target} ${rewardToken}`,
@@ -81,20 +82,8 @@ export async function createChallenge(
     updatedAt: Date.now()
   };
 
-  // 2. Deploy Escrow via EscrowService
-  try {
-    const escrowResponse = await EscrowService.createEscrowForChallenge(newQuest as any, 'G_RECIPIENT_PLACEHOLDER');
-    
-    newQuest.escrowId = escrowResponse.escrowId;
-    newQuest.status = 'ACTIVE';
-    newQuest.escrowStatus = 'FUNDED';
-    
-    quests.push(newQuest);
-    return newQuest;
-  } catch (error) {
-    console.error('Failed to create quest due to escrow error:', error);
-    throw error;
-  }
+  quests.push(newQuest);
+  return newQuest;
 }
 
 /**
@@ -116,6 +105,9 @@ export async function joinChallenge(questId: string, userAddress: string): Promi
   }
 
   const participation = SavingsLib.initializeParticipation(quest, userAddress);
+  const existing = participations.find(p => p.questId === questId && p.userAddress === userAddress);
+  if (existing) return existing;
+
   participations.push(participation);
   
   return participation;

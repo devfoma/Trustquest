@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Search, Plus, Users, TrendingUp, Wallet, Droplets, Loader2, Clock, Trophy, Filter, RefreshCw, AlertTriangle } from "lucide-react";
 import CreatePoolModal from "@/components/app/CreatePoolModal";
 import DepositModal from "@/components/app/DepositModal";
-import WithdrawModal from "@/components/app/WithdrawModal";
+import WithdrawModal from "@/components/app/WithdrawalModal";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useWalletConnection } from "@/hooks/useWalletConnection";
 import { useTrustQuest } from "@/hooks/useTrustQuest";

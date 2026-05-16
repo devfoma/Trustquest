@@ -33,7 +33,7 @@ export const EscrowMapper = {
   toDomainMilestone: (twMilestone: TWMilestone, index: number): Partial<Milestone> => {
     return {
       description: twMilestone.description,
-      targetAmount: parseFloat(twMilestone.amount),
+      targetAmount: parseFloat(twMilestone.amount || '0'),
       isCompleted: twMilestone.status === 'released'
     };
   }

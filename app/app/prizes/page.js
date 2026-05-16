@@ -12,7 +12,7 @@ import Image from "next/image"
 export default function PrizesPage() {
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false)
   const [activeFilter, setActiveFilter] = useState("all")
-  // const [selectedPrize, setSelectedPrize] = useState(null)
+  const [selectedPrize, setSelectedPrize] = useState(null)
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
@@ -21,66 +21,66 @@ export default function PrizesPage() {
 
   const prizes = [
     {
-      id: 1,
+      id: "p_1",
       name: "Grand Prize",
       protocol: "TrustQuest",
       amount: 23087.0,
-      token: "XLM",
+      token: { symbol: "USDC", address: "GA...USDC" },
       tokenAmount: 0.23,
       cadence: "Monthly",
       participants: 1247,
       nextDraw: "in 5 days",
     },
     {
-      id: 2,
+      id: "p_2",
       name: "Weekly Prize",
       protocol: "TrustQuest",
       amount: 12500.0,
-      token: "XLM",
+      token: { symbol: "XLM", address: "native" },
       tokenAmount: 0.15,
       cadence: "Weekly",
       participants: 892,
       nextDraw: "in 2 days",
     },
     {
-      id: 3,
+      id: "p_3",
       name: "Daily Prize",
       protocol: "TrustQuest",
       amount: 5000.0,
-      token: "XLM",
+      token: { symbol: "ARST", address: "GB...ARST" },
       tokenAmount: 0.08,
       cadence: "Daily",
       participants: 456,
       nextDraw: "in 12 hours",
     },
     {
-      id: 4,
+      id: "p_4",
       name: "Hourly Prize",
       protocol: "TrustQuest",
       amount: 1000.0,
-      token: "XLM",
+      token: { symbol: "USDC", address: "GA...USDC" },
       tokenAmount: 0.02,
       cadence: "Hourly",
       participants: 234,
       nextDraw: "in 45 minutes",
     },
     {
-      id: 5,
+      id: "p_5",
       name: "Community Prize",
       protocol: "TrustQuest",
       amount: 7500.0,
-      token: "XLM",
+      token: { symbol: "XLM", address: "native" },
       tokenAmount: 0.12,
       cadence: "Weekly",
       participants: 678,
       nextDraw: "in 4 days",
     },
     {
-      id: 6,
+      id: "p_6",
       name: "Special Prize",
       protocol: "TrustQuest",
       amount: 15000.0,
-      token: "XLM",
+      token: { symbol: "ARST", address: "GB...ARST" },
       tokenAmount: 0.18,
       cadence: "Monthly",
       participants: 1023,
@@ -91,6 +91,7 @@ export default function PrizesPage() {
   const filteredPrizes = activeFilter === "all" ? prizes : prizes.filter((p) => p.protocol === activeFilter)
 
   const handleOpenDeposit = (prize) => {
+    setSelectedPrize(prize)
     setIsDepositModalOpen(true)
   }
 
@@ -159,7 +160,7 @@ export default function PrizesPage() {
                       : `$${prize.amount}`}
                   </div>
                   <div className="text-gray-400 text-sm mb-4">
-                    + {prize.tokenAmount} {prize.token}
+                    + {prize.tokenAmount} {prize.token.symbol}
                   </div>
 
                   <div className="space-y-3 mb-4">
@@ -209,7 +210,11 @@ export default function PrizesPage() {
         </div>
       </main>
 
-      <DepositModal isOpen={isDepositModalOpen} onClose={() => setIsDepositModalOpen(false)} />
+      <DepositModal 
+        isOpen={isDepositModalOpen} 
+        onClose={() => setIsDepositModalOpen(false)} 
+        selectedPool={selectedPrize}
+      />
     </div>
   )
 }

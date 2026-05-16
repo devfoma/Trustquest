@@ -179,7 +179,7 @@ export default function WalletSelectionModal({
           {recommendedWallets.length > 0 && (
             <div className="mb-6">
               <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2">
-                <span className="text-red-400">⭐</span>
+                <span className="text-red-400">Testnet</span>
                 Recommended Wallets
               </h3>
               <div className="space-y-2">
@@ -223,13 +223,13 @@ export default function WalletSelectionModal({
           {/* Info Section */}
           <div className="bg-red-900/20 rounded-lg p-3 text-xs text-red-300">
             <p className="mb-2">
-              🔒 <strong>Security First:</strong> Your private keys never leave your wallet.
+              <strong>Security First:</strong> Your private keys never leave your wallet.
             </p>
             <p className="mb-2">
-              🌐 <strong>Network Support:</strong> All wallets support Stellar Mainnet and Testnet.
+              <strong>Network:</strong> TrustQuest is configured for Stellar Testnet.
             </p>
             <p>
-              💡 <strong>Need Help?</strong> Visit the wallet's official website for installation guides.
+              <strong>Need Help?</strong> Visit the wallet's official website for installation guides.
             </p>
           </div>
         </div>

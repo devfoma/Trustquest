@@ -17,6 +17,7 @@ export interface WalletConfig {
 }
 
 export type NetworkType = 'mainnet' | 'testnet' | 'futurenet' | 'standalone';
+export const EXPECTED_NETWORK: NetworkType = 'testnet';
 
 export interface NetworkConfig {
   id: NetworkType;
@@ -54,7 +55,7 @@ export interface WalletError {
   message: string;
   walletType?: WalletType;
   recoverable: boolean;
-  action?: string;
+  action?: string | null;
 }
 
 // Stellar wallet configurations
@@ -64,10 +65,10 @@ export const STELLAR_WALLETS: Record<WalletType, WalletConfig> = {
     name: 'xBull',
     displayName: 'xBull Wallet',
     description: 'Secure and user-friendly Stellar wallet for mobile and desktop',
-    icon: '🚀',
+    icon: 'XB',
     website: 'https://xbull.io',
     downloadUrl: 'https://xbull.io/download',
-    supportedNetworks: ['mainnet', 'testnet'],
+    supportedNetworks: ['testnet'],
     isMobile: true,
     isHardware: false,
     recommended: true,
@@ -77,10 +78,10 @@ export const STELLAR_WALLETS: Record<WalletType, WalletConfig> = {
     name: 'Albedo',
     displayName: 'Albedo Wallet',
     description: 'Browser-based wallet with advanced features',
-    icon: '🌟',
+    icon: 'AL',
     website: 'https://albedo.link',
     downloadUrl: 'https://albedo.link',
-    supportedNetworks: ['mainnet', 'testnet'],
+    supportedNetworks: ['testnet'],
     isMobile: false,
     isHardware: false,
     recommended: true,
@@ -90,10 +91,10 @@ export const STELLAR_WALLETS: Record<WalletType, WalletConfig> = {
     name: 'Freighter',
     displayName: 'Freighter Wallet',
     description: 'Popular browser extension wallet for Stellar',
-    icon: '🚢',
+    icon: 'FR',
     website: 'https://freighter.app',
     downloadUrl: 'https://freighter.app',
-    supportedNetworks: ['mainnet', 'testnet'],
+    supportedNetworks: ['testnet'],
     isMobile: false,
     isHardware: false,
     recommended: true,
@@ -103,10 +104,10 @@ export const STELLAR_WALLETS: Record<WalletType, WalletConfig> = {
     name: 'Rabet',
     displayName: 'Rabet Wallet',
     description: 'Feature-rich wallet for Stellar ecosystem',
-    icon: '🐰',
+    icon: 'RB',
     website: 'https://rabet.io',
     downloadUrl: 'https://rabet.io',
-    supportedNetworks: ['mainnet', 'testnet'],
+    supportedNetworks: ['testnet'],
     isMobile: false,
     isHardware: false,
     recommended: false,
@@ -116,10 +117,10 @@ export const STELLAR_WALLETS: Record<WalletType, WalletConfig> = {
     name: 'Ledger',
     displayName: 'Ledger Hardware Wallet',
     description: 'Most secure hardware wallet option',
-    icon: '🔒',
+    icon: 'LD',
     website: 'https://ledger.com',
     downloadUrl: 'https://ledger.com',
-    supportedNetworks: ['mainnet', 'testnet'],
+    supportedNetworks: ['testnet'],
     isMobile: false,
     isHardware: true,
     recommended: false,
@@ -136,7 +137,7 @@ export const STELLAR_NETWORKS: Record<NetworkType, NetworkConfig> = {
     rpcUrl: 'https://rpc.mainnet.stellar.org',
     horizonUrl: 'https://horizon.stellar.org',
     isTestnet: false,
-    isSupported: true,
+    isSupported: false,
   },
   testnet: {
     id: 'testnet',
@@ -274,6 +275,20 @@ export const isNetworkSupported = (networkType: string): networkType is NetworkT
   return Object.keys(STELLAR_NETWORKS).includes(networkType);
 };
 
+export const normalizeStellarNetwork = (network?: string | null): NetworkType | null => {
+  if (!network) return null;
+  const value = network.toLowerCase();
+  if (value === 'public' || value === 'mainnet' || value === 'pubnet') return 'mainnet';
+  if (value === 'testnet' || value.includes('test')) return 'testnet';
+  if (value === 'futurenet' || value.includes('future')) return 'futurenet';
+  if (value === 'standalone' || value.includes('local')) return 'standalone';
+  return null;
+};
+
+export const isExpectedNetwork = (network?: NetworkType | null): boolean => {
+  return network === EXPECTED_NETWORK;
+};
+
 export const getRecommendedWallets = (): WalletConfig[] => {
   return Object.values(STELLAR_WALLETS).filter(wallet => wallet.recommended);
 };
@@ -326,6 +341,7 @@ export const WALLET_COPY = {
   WALLET_SESSION: 'Wallet Session',
   LAST_CONNECTED: 'Last connected',
   NETWORK: 'Network',
+  WRONG_NETWORK: 'Wrong Network',
   ADDRESS: 'Address',
   BALANCE: 'Balance',
   TRANSACTIONS: 'Transactions',

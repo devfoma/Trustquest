@@ -37,4 +37,5 @@ export interface UserQuestParticipation {
   }[];
   isEligibleForReward: boolean;
   joinedAt: number;
+  updatedAt?: number;
 }

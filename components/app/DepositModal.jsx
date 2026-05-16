@@ -1,160 +1,281 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useWalletConnection } from "@/hooks/useWalletConnection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { X, AlertCircle, Check, Info } from "lucide-react";
 import {
-	Dialog,
-	DialogContent,
-	DialogHeader,
-	DialogTitle,
-	DialogClose,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
+import { X, AlertCircle, Check, Droplets, Wallet, TrendingUp, RefreshCw, Clock, Info } from "lucide-react";
+import { createTransaction } from "@/lib/api";
+import { useTrustQuest } from "@/hooks/useTrustQuest";
+import { ErrorStateDisplay, InlineError, LoadingState as LoadingDisplay } from "@/components/ui/error-state";
+import { errorManager } from "@/lib/error-handling";
 
 export default function DepositModal({
   isOpen,
   onClose,
-  selectedVault,
-  onDeposit,
-  depositAmount,
-  setDepositAmount,
-  error,
-  success,
-  isPending,
+  selectedPool: initialPool,
 }) {
-	const { state } = useWalletConnection();
-	const { isConnected } = state;
+  const { state: walletConnectionState } = useWalletConnection();
+  const { address, isConnected } = walletConnectionState;
+  const { 
+    validateAction, 
+    checkPrerequisites, 
+    errorState, 
+    dismissError,
+    clearErrors,
+    pools
+  } = useTrustQuest();
+  
+  // State management
+  const [selectedPool, setSelectedPool] = useState(initialPool);
+  const [depositAmount, setDepositAmount] = useState("");
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+  const [isPending, setIsPending] = useState(false);
+  const [validationErrors, setValidationErrors] = useState([]);
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
-	if (!isOpen || !selectedVault) return null;
+  // Sync selected pool when initialPool changes or pools are loaded
+  useEffect(() => {
+    if (initialPool) {
+      const poolId = initialPool.id;
+      const foundPool = pools.find(p => p.id === poolId);
+      setSelectedPool(foundPool || initialPool);
+    }
+  }, [initialPool, pools]);
 
-	const handleMaxClick = () => {
-		// In a real app, this would get the user's token balance
-		setDepositAmount("0");
-	};
+  // Clear errors when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      clearErrors();
+      setValidationErrors([]);
+      setRetryCount(0);
+      setDepositAmount("");
+      setError("");
+      setSuccess(false);
+    }
+  }, [isOpen, clearErrors]);
 
-	return (
-		<Dialog open={isOpen} onOpenChange={onClose}>
-			<DialogContent className="bg-[#1A0505] border border-red-900/20 max-w-md rounded-2xl shadow-2xl">
-				<DialogHeader className="border-b border-red-900/10 pb-4">
-					<div className="flex items-start justify-between">
-						<div>
-							<DialogTitle className="text-2xl font-bold text-white tracking-tight">
-								Deposit to {selectedVault?.name || "Vault"}
-							</DialogTitle>
-							<p className="text-sm text-gray-400 mt-1 font-mono">
-								VAULT #{selectedVault?.id}
-							</p>
-						</div>
-						<DialogClose asChild>
-							<button className="rounded-full p-1.5 opacity-70 transition-all hover:bg-red-600/20 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-red-500/20 disabled:pointer-events-none">
-								<X className="h-4 w-4 text-white" />
-								<span className="sr-only">Close</span>
-							</button>
-						</DialogClose>
-					</div>
-				</DialogHeader>
+  const handleDeposit = async () => {
+    // Clear previous errors
+    setError("");
+    setValidationErrors([]);
+    
+    if (!selectedPool) {
+      setError("No pool selected");
+      return;
+    }
 
-				<div className="space-y-6 py-4">
-					{!isConnected ? (
-						<div className="bg-red-900/20 border border-red-500/20 rounded-xl p-4 flex gap-3">
-							<AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
-							<div>
-								<p className="text-red-200 font-medium">Wallet Not Connected</p>
-								<p className="text-red-300/80 text-sm mt-1">
-									Please connect your wallet to deposit funds
-								</p>
-							</div>
-						</div>
-					) : (
-						<>
-							{/* Vault Info Cards */}
-							<div className="grid grid-cols-2 gap-3">
-								<div className="bg-[#1A0808]/50 rounded-xl p-4 border border-red-900/10">
-									<p className="text-xs text-gray-400 uppercase tracking-wider font-semibold mb-1">Yield (APY)</p>
-									<p className="text-xl font-bold text-green-400">{selectedVault?.apy}%</p>
-								</div>
-								<div className="bg-[#1A0808]/50 rounded-xl p-4 border border-red-900/10">
-									<p className="text-xs text-gray-400 uppercase tracking-wider font-semibold mb-1">Total Value</p>
-									<p className="text-xl font-bold text-white">{(selectedVault?.tvl || 0).toFixed(2)} <span className="text-sm text-gray-500 font-normal">{selectedVault?.tvlToken}</span></p>
-								</div>
-							</div>
+    // Validate prerequisites
+    const prerequisites = checkPrerequisites('deposit', selectedPool, "1000000"); // Mock balance for validation
+    if (!prerequisites.prerequisitesMet) {
+      if (!prerequisites.walletConnected) {
+        errorManager.addError('WALLET_NOT_CONNECTED');
+        return;
+      }
+      if (!prerequisites.networkSupported) {
+        errorManager.addError('UNSUPPORTED_NETWORK');
+        return;
+      }
+    }
 
-							{/* Amount Input */}
-							<div className="space-y-2">
-								<label className="block text-sm font-medium text-gray-300">
-									Amount to Deposit
-								</label>
-								<div className="relative">
-									<Input
-										type="number"
-										value={depositAmount}
-										onChange={(e) => setDepositAmount(e.target.value)}
-										placeholder="0.00"
-										className="bg-[#1A0808]/80 border-red-900/20 text-white text-lg rounded-xl focus:ring-1 focus:ring-red-500/50 h-14 pr-20"
-										disabled={isPending}
-									/>
-									<button
-										onClick={handleMaxClick}
-										className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 px-2 py-1 rounded-md transition-all"
-										disabled={isPending}
-									>
-										MAX
-									</button>
-								</div>
-								<div className="flex justify-between text-xs text-gray-500 mt-1">
-									<span>Token: {selectedVault?.tvlToken}</span>
-								</div>
-							</div>
+    // Prepare form data for validation
+    const formData = {
+      poolId: selectedPool.id,
+      amount: depositAmount,
+    };
 
-							{/* Info Alert */}
-							<div className="bg-red-900/20 border border-red-500/20 rounded-xl p-3 flex gap-3 items-start">
-								<Info className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" />
-								<div className="text-xs text-red-200/80 leading-relaxed">
-									You'll receive your principal + interest upon withdrawal at the end of the lock period.
-								</div>
-							</div>
+    // Validate form data
+    const validation = validateAction('deposit', formData, selectedPool, "1000000"); // Mock balance
+    if (!validation.isValid) {
+      setValidationErrors(validation.errors);
+      return;
+    }
 
-							{/* Error message */}
-							{error && (
-								<div className="bg-red-900/20 border border-red-500/20 rounded-xl p-3 flex gap-3">
-									<AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" />
-									<p className="text-red-200 text-sm">{error}</p>
-								</div>
-							)}
+    setIsPending(true);
+    setIsRetrying(false);
 
-							{/* Success message */}
-							{success && (
-								<div className="bg-green-900/20 border border-green-500/20 rounded-xl p-3 flex gap-3">
-									<Check className="h-4 w-4 text-green-500 flex-shrink-0 mt-0.5" />
-									<p className="text-green-200 text-sm">Deposit successful! 🎉</p>
-								</div>
-							)}
+    try {
+      // Create transaction record
+      const response = await createTransaction(address, "deposit", {
+        pool_id: selectedPool.id,
+        amount: depositAmount,
+      });
 
-							{/* Action Buttons */}
-							<div className="space-y-3 pt-2">
-								<Button
-									onClick={onDeposit}
-									disabled={isPending || !depositAmount || Number(depositAmount) <= 0}
-									className="w-full bg-red-600 hover:bg-red-700 text-white font-bold h-12 rounded-xl transition-all disabled:bg-gray-800 disabled:text-gray-500"
-								>
-									{isPending ? "Processing..." : "Confirm Deposit"}
-								</Button>
+      if (response.success) {
+        setSuccess(true);
+        clearErrors();
+        setTimeout(() => {
+          handleClose();
+        }, 2000);
+      } else {
+        const errorMsg = response.error || "Failed to process deposit";
+        setError(errorMsg);
+        errorManager.addError('TRANSACTION_FAILED', { 
+          error: errorMsg, 
+          action: 'deposit',
+          poolId: selectedPool.id
+        });
+      }
+    } catch (err) {
+      console.error('Deposit error:', err);
+      errorManager.addError('TRANSACTION_FAILED', { 
+        error: err.message, 
+        action: 'deposit',
+        poolId: selectedPool?.id
+      });
+      setError(err.message || "Failed to process deposit");
+    } finally {
+      setIsPending(false);
+    }
+  };
 
-								<Button
-									onClick={onClose}
-									variant="ghost"
-									disabled={isPending}
-									className="w-full text-gray-400 hover:text-white hover:bg-red-600/10 h-12 rounded-xl transition-all"
-								>
-									Cancel
-								</Button>
-							</div>
-						</>
-					)}
-				</div>
-			</DialogContent>
-		</Dialog>
-	);
+  const handleRetry = async () => {
+    if (retryCount >= 3) {
+      setError("Maximum retry attempts reached");
+      return;
+    }
+    setRetryCount(prev => prev + 1);
+    await handleDeposit();
+  };
+
+  const handleClose = () => {
+    onClose();
+  };
+
+  const handleMaxClick = () => {
+    // Mock setting max amount
+    setDepositAmount("100");
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <Dialog open={isOpen} onOpenChange={handleClose}>
+      <DialogContent className="bg-[#1A0808]/90 backdrop-blur-sm border border-red-900/20 text-white sm:max-w-[425px] shadow-lg">
+        <DialogHeader className="flex flex-row items-center justify-between">
+          <DialogTitle className="flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-red-400" />
+            Deposit to Pool
+          </DialogTitle>
+          <button onClick={handleClose} className="text-gray-400 hover:text-white">
+            <X className="h-4 w-4" />
+          </button>
+        </DialogHeader>
+
+        <div className="py-4">
+          {!isConnected ? (
+            <div className="text-center py-8">
+              <Wallet className="w-12 h-12 text-yellow-400 mx-auto mb-4" />
+              <p className="text-yellow-400">Connect your wallet to deposit</p>
+            </div>
+          ) : (
+            <>
+              {/* Error State Display */}
+              <ErrorStateDisplay 
+                errorState={errorState}
+                onDismiss={dismissError}
+                onRetry={handleRetry}
+                className="mb-4"
+              />
+
+              {/* Validation Errors */}
+              {validationErrors.length > 0 && (
+                <div className="mb-4 space-y-2">
+                  {validationErrors.map((validationError, index) => (
+                    <InlineError
+                      key={index}
+                      message={validationError}
+                      severity="error"
+                      className="w-full"
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Pool Info */}
+              {selectedPool && (
+                <div className="bg-[#2A0A0A]/50 rounded-lg p-4 mb-4">
+                  <h3 className="font-medium mb-1">{selectedPool.name}</h3>
+                  <div className="flex justify-between text-sm text-gray-400">
+                    <span>Token: {selectedPool.token?.symbol || "XLM"}</span>
+                    <span className="text-green-400">{selectedPool.interestRate || selectedPool.apy || 0}% APY</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Amount Input */}
+              <div className="mb-4">
+                <div className="flex justify-between items-center mb-2">
+                  <label className="text-sm text-gray-300">
+                    Amount to Deposit
+                  </label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleMaxClick}
+                    className="text-red-400 hover:text-red-300 text-xs"
+                  >
+                    MAX
+                  </Button>
+                </div>
+                <Input
+                  type="number"
+                  value={depositAmount}
+                  onChange={(e) => {
+                    setDepositAmount(e.target.value);
+                    setError("");
+                    setValidationErrors([]);
+                  }}
+                  placeholder="0.00"
+                  className="bg-[#2A0A0A]/70 border-red-900/20 text-white"
+                  disabled={isPending || success}
+                />
+              </div>
+
+              {/* Success Display */}
+              {success && (
+                <div className="bg-green-900/20 text-green-500 p-3 rounded-md text-sm flex items-center gap-2 mb-4">
+                  <Check size={16} />
+                  Deposit successful! 🎉
+                </div>
+              )}
+
+              {/* Info Box */}
+              <div className="bg-red-900/20 rounded-lg p-3 text-xs text-red-300 mb-4">
+                <Info className="inline-block w-3 h-3 mr-1 mb-0.5" />
+                Your deposit is locked until the pool ends. You earn interest and tickets for the prize draw.
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <Button
+                  onClick={handleDeposit}
+                  disabled={isPending || success || !depositAmount}
+                  className="flex-1 bg-red-600 hover:bg-red-700 font-bold"
+                >
+                  {isPending ? "Processing..." : success ? "Deposited!" : "Deposit Now"}
+                </Button>
+                <Button
+                  onClick={handleClose}
+                  variant="outline"
+                  className="border-red-900/20 hover:bg-red-600/10"
+                  disabled={isPending}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }

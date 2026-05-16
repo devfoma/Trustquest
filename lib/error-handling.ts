@@ -79,6 +79,8 @@ export const ERROR_CODES = {
   MAINTENANCE_MODE: 'MAINTENANCE_MODE',
 } as const;
 
+type ErrorCode = typeof ERROR_CODES[keyof typeof ERROR_CODES];
+
 // Error message templates
 export const getErrorMessage = (code: string, context?: Record<string, any>): string => {
   const messages: Record<string, string> = {
@@ -171,7 +173,7 @@ export const getErrorSeverity = (code: string): 'error' | 'warning' | 'info' => 
 
 // Error recoverability determination
 export const isRecoverable = (code: string): boolean => {
-  const recoverableCodes = new Set([
+  const recoverableCodes = new Set<string>([
     ERROR_CODES.WALLET_NOT_CONNECTED,
     ERROR_CODES.WALLET_NO_ADDRESS,
     ERROR_CODES.WALLET_BUSY,
@@ -190,7 +192,7 @@ export const isRecoverable = (code: string): boolean => {
 
 // Error retryability determination
 export const isRetryable = (code: string): boolean => {
-  const retryableCodes = new Set([
+  const retryableCodes = new Set<string>([
     ERROR_CODES.NETWORK_TIMEOUT,
     ERROR_CODES.TRANSACTION_TIMEOUT,
     ERROR_CODES.TRANSACTION_STALE,
@@ -357,7 +359,7 @@ export const handleAsyncError = async (
   } catch (error) {
     console.error('Async operation failed:', error);
     
-    let errorCode = ERROR_CODES.UNKNOWN_ERROR;
+    let errorCode: ErrorCode = ERROR_CODES.UNKNOWN_ERROR;
     let context = errorContext;
 
     if (error instanceof Error) {

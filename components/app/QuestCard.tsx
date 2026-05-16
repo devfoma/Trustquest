@@ -1,3 +1,5 @@
+import { useState } from "react"
+import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -9,11 +11,12 @@ import { cn } from "@/lib/utils"
 interface QuestCardProps {
   challenge: Quest; // Keeping prop name for now to avoid breaking parent components during migration
   participation?: UserQuestParticipation;
-  onJoin?: (id: string) => void;
+  onJoin?: (id: string) => Promise<unknown> | void;
   isConnected?: boolean;
 }
 
 export default function QuestCard({ challenge, participation, onJoin, isConnected }: QuestCardProps) {
+  const [isJoining, setIsJoining] = useState(false);
   const quest = challenge;
   const progress = participation ? calculateParticipationProgress(quest as any, participation as any) : 0;
   const isJoined = !!participation;
@@ -101,11 +104,13 @@ export default function QuestCard({ challenge, participation, onJoin, isConnecte
                 </div>
                 <span className="text-sm font-bold text-white">{progress}% Complete</span>
               </div>
-              <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-400 hover:bg-red-500/10 p-0 h-auto font-bold text-xs">
-                View Details <ArrowRight size={12} className="ml-1" />
-              </Button>
+              <Link href={`/app/quests/${quest.id}`}>
+                <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-400 hover:bg-red-500/10 p-0 h-auto font-bold text-xs">
+                  View Details <ArrowRight size={12} className="ml-1" />
+                </Button>
+              </Link>
             </div>
-            <Progress value={progress} className="h-2 bg-red-900/20" indicatorClassName="bg-red-600 shadow-[0_0_10px_rgba(239,68,68,0.4)]" />
+            <Progress value={progress} className="h-2 bg-red-900/20" />
           </div>
         ) : (
           <Button 
@@ -113,16 +118,22 @@ export default function QuestCard({ challenge, participation, onJoin, isConnecte
               "w-full font-bold h-12 rounded-xl shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98]",
               isConnected ? "bg-red-600 hover:bg-red-700 text-white shadow-red-900/20" : "bg-[#1A0808] border border-red-900/30 text-red-500 hover:bg-red-900/20"
             )}
-            onClick={() => {
+            disabled={isJoining}
+            onClick={async () => {
               if (isConnected && onJoin) {
-                onJoin(quest.id);
+                setIsJoining(true);
+                try {
+                  await onJoin(quest.id);
+                } finally {
+                  setIsJoining(false);
+                }
               } else {
                 // Focus the connect button or show a message
                 document.getElementById('connect-wrap')?.scrollIntoView({ behavior: 'smooth' });
               }
             }}
           >
-            {isConnected ? "Join Quest" : "Connect Wallet to Join"}
+            {isJoining ? "Joining..." : isConnected ? "Join Quest" : "Connect Wallet to Join"}
           </Button>
         )}
 

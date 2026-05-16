@@ -11,20 +11,26 @@ export interface TWEscrowParticipant {
 
 export interface TWMilestone {
   description: string;
-  amount: string; // BigInt string
+  amount?: string; // BigInt string
+  receiver?: string;
   status?: 'pending' | 'approved' | 'released';
 }
 
 export interface TWCreateEscrowRequest {
-  type: EscrowType;
+  type?: EscrowType;
+  signer?: string;
+  engagementId?: string;
   title: string;
   description: string;
-  sponsor: string;
-  recipient: string;
+  sponsor?: string;
+  recipient?: string;
   arbitrator?: string;
-  amount: string;
-  assetCode: string;
+  amount?: string | number;
+  assetCode?: string;
   assetIssuer?: string;
+  roles?: Record<string, string>;
+  platformFee?: number;
+  trustline?: { symbol?: string; name?: string; address: string };
   milestones?: TWMilestone[];
 }
 
@@ -47,4 +53,26 @@ export interface TWReleaseRequest {
   escrowId: string;
   recipient: string;
   milestoneIndex?: number;
+}
+
+export interface TWFundEscrowRequest {
+  contractId: string;
+  signer: string;
+  amount: number;
+}
+
+export interface TWUnsignedTransactionResponse {
+  status: 'SUCCESS' | 'FAILED';
+  unsignedTransaction?: string;
+  xdr?: string;
+  message?: string;
+  contractId?: string;
+}
+
+export interface TWSendTransactionResponse {
+  status: 'SUCCESS' | 'FAILED';
+  message?: string;
+  contractId?: string;
+  escrow?: unknown;
+  txHash?: string;
 }

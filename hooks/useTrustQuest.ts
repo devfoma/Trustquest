@@ -50,8 +50,10 @@ export function useTrustQuest() {
   const [transactions, setTransactions] = useState<TransactionState[]>([]);
   
   const [loading, setLoading] = useState<LoadingState>({
+    vaults: false,
     pools: false,
     positions: false,
+    subscriptions: false,
     transactions: false,
     dashboard: false,
   });
@@ -81,7 +83,7 @@ export function useTrustQuest() {
     });
     
     walletErrors.forEach(error => {
-      errorManager.addError(error);
+      errorManager.addError(error.code, { message: error.message });
     });
     
     // Clear wallet-related errors when wallet is properly connected
@@ -102,8 +104,7 @@ export function useTrustQuest() {
 
   // Fetch pools with error handling
   const fetchPools = useCallback(async () => {
-    if (loading.pools) return;
-    
+    // Avoid multiple concurrent fetches
     setLoading(prev => ({ ...prev, pools: true }));
     setErrors(prev => ({ ...prev, pools: undefined }));
     
@@ -123,17 +124,15 @@ export function useTrustQuest() {
     } finally {
       setLoading(prev => ({ ...prev, pools: false }));
     }
-  }, [loading.pools]);
+  }, []); 
 
   // Fetch user positions
-  const fetchUserPositions = useCallback(async () => {
-    if (!address || loading.positions) return;
-    
+  const fetchUserPositions = useCallback(async (walletAddress: string) => {
     setLoading(prev => ({ ...prev, positions: true }));
     setErrors(prev => ({ ...prev, positions: undefined }));
     
     try {
-      const response = await getUserPositions(address);
+      const response = await getUserPositions(walletAddress);
       if (response.success) {
         setUserPositions(response.data);
       } else {
@@ -144,17 +143,15 @@ export function useTrustQuest() {
     } finally {
       setLoading(prev => ({ ...prev, positions: false }));
     }
-  }, [address, loading.positions]);
+  }, []);
 
   // Fetch transactions
-  const fetchTransactions = useCallback(async () => {
-    if (!address || loading.transactions) return;
-    
+  const fetchTransactions = useCallback(async (walletAddress: string) => {
     setLoading(prev => ({ ...prev, transactions: true }));
     setErrors(prev => ({ ...prev, transactions: undefined }));
     
     try {
-      const response = await getTransactions(address);
+      const response = await getTransactions(walletAddress);
       if (response.success) {
         setTransactions(response.data);
       } else {
@@ -165,17 +162,15 @@ export function useTrustQuest() {
     } finally {
       setLoading(prev => ({ ...prev, transactions: false }));
     }
-  }, [address, loading.transactions]);
+  }, []);
 
   // Fetch dashboard data
-  const fetchDashboardData = useCallback(async () => {
-    if (!address || loading.dashboard) return;
-    
+  const fetchDashboardData = useCallback(async (walletAddress: string) => {
     setLoading(prev => ({ ...prev, dashboard: true }));
     setErrors(prev => ({ ...prev, dashboard: undefined }));
     
     try {
-      const response = await getDashboardData(address);
+      const response = await getDashboardData(walletAddress);
       if (response.success) {
         setDashboardData(response.data);
       } else {
@@ -186,30 +181,34 @@ export function useTrustQuest() {
     } finally {
       setLoading(prev => ({ ...prev, dashboard: false }));
     }
-  }, [address, loading.dashboard]);
+  }, []);
 
-  // Initial data fetch when wallet connects
+  // Initial fetch on mount
+  useEffect(() => {
+    fetchPools();
+  }, [fetchPools]);
+
+  // Fetch user data on wallet connection
   useEffect(() => {
     if (isConnected && address) {
-      fetchPools();
-      fetchUserPositions();
-      fetchTransactions();
-      fetchDashboardData();
+      fetchUserPositions(address);
+      fetchTransactions(address);
+      fetchDashboardData(address);
     } else {
-      // Reset data when wallet disconnects
-      setDashboardData(null);
+      // Clear user data on disconnect
       setUserPositions([]);
       setTransactions([]);
+      setDashboardData(null);
     }
-  }, [isConnected, address, fetchPools, fetchUserPositions, fetchTransactions, fetchDashboardData]);
+  }, [isConnected, address, fetchUserPositions, fetchTransactions, fetchDashboardData]);
 
   // Refresh functions
   const refresh = useCallback(() => {
     fetchPools();
     if (address) {
-      fetchUserPositions();
-      fetchTransactions();
-      fetchDashboardData();
+      fetchUserPositions(address);
+      fetchTransactions(address);
+      fetchDashboardData(address);
     }
   }, [fetchPools, fetchUserPositions, fetchTransactions, fetchDashboardData, address]);
 
@@ -218,13 +217,13 @@ export function useTrustQuest() {
   
   // Get user's total deposits
   const totalDeposits = userPositions.reduce(
-    (total, position) => total + parseFloat(position.totalAmount), 
+    (total, position) => total + parseFloat(position.totalAmount || position.currentAmount || '0'), 
     0
   );
   
   // Get total interest earned
   const totalInterestEarned = userPositions.reduce(
-    (total, position) => total + parseFloat(position.interestEarned), 
+    (total, position) => total + parseFloat(position.interestEarned || position.yieldEarned || '0'), 
     0
   );
 
@@ -259,7 +258,7 @@ export function useTrustQuest() {
           };
         }
         const userPosition = userPositions.find(pos => pos.poolId === pool.id);
-        return validateWithdraw(data, walletState, pool, userPosition);
+        return validateWithdraw(data, walletState, pool, userPosition ?? null);
       default:
         return {
           isValid: false,
@@ -335,4 +334,3 @@ export function useTrustQuest() {
     dismissError,
   };
 }
-
